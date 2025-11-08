@@ -30,9 +30,12 @@ func (f *HTTPClientFactory) NewClientForSelfSignedTLSServer(certificatePEM []byt
 
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-			RootCAs:    caCertPool,
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: true, // We do full verification ourselves below
 			// Custom verification to allow clock skew tolerance
+			// We must use InsecureSkipVerify because Go's standard validation
+			// checks certificate dates BEFORE calling VerifyPeerCertificate,
+			// which prevents our clock skew tolerance from working
 			VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 				// Allow up to 24 hours of clock skew for self-signed certificates
 				// This handles cases where system clocks are slightly out of sync
@@ -47,7 +50,7 @@ func (f *HTTPClientFactory) NewClientForSelfSignedTLSServer(certificatePEM []byt
 				for _, rawCert := range rawCerts {
 					cert, err := x509.ParseCertificate(rawCert)
 					if err != nil {
-						continue
+						return fmt.Errorf("failed to parse certificate: %w", err)
 					}
 					
 					// Check certificate validity with clock skew tolerance
@@ -75,7 +78,7 @@ func (f *HTTPClientFactory) NewClientForSelfSignedTLSServer(certificatePEM []byt
 							opts.CurrentTime = now.Add(-clockSkewTolerance)
 							_, err = cert.Verify(opts)
 							if err != nil {
-								return err
+								return fmt.Errorf("certificate verification failed: %w", err)
 							}
 						}
 					}
