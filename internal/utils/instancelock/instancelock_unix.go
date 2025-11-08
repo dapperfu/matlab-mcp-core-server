@@ -20,3 +20,21 @@ func checkProcessRunningPlatformSpecific(pid int) bool {
 	return err == nil
 }
 
+// killProcessPlatformSpecific terminates a process on Unix
+func killProcessPlatformSpecific(pid int) error {
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
+
+	// Send SIGTERM first for graceful shutdown
+	err = process.Signal(syscall.SIGTERM)
+	if err != nil {
+		return err
+	}
+
+	// Note: We could wait and then send SIGKILL if needed, but for simplicity
+	// we'll just send SIGTERM and let the OS handle cleanup
+	return nil
+}
+

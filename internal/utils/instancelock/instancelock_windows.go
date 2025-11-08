@@ -26,3 +26,19 @@ func checkProcessRunningPlatformSpecific(pid int) bool {
 	return exitCode == STILL_ACTIVE
 }
 
+// killProcessPlatformSpecific terminates a process on Windows
+func killProcessPlatformSpecific(pid int) error {
+	handle, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pid))
+	if err != nil {
+		return err
+	}
+	defer windows.CloseHandle(handle)
+
+	err = windows.TerminateProcess(handle, 1)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+

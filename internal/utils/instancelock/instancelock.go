@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const lockFileName = "matlab-mcp-core-server.lock"
@@ -31,6 +32,13 @@ func New() (*InstanceLock, error) {
 
 // TryLock attempts to acquire the lock. Returns true if lock was acquired, false if another instance is running.
 func (l *InstanceLock) TryLock() (bool, error) {
+	return l.TryLockWithKill(false)
+}
+
+// TryLockWithKill attempts to acquire the lock, optionally killing the existing instance if one is running.
+// If killExisting is true and an existing instance is found, it will be terminated and the lock acquired.
+// Returns true if lock was acquired, false if another instance is running and killExisting is false.
+func (l *InstanceLock) TryLockWithKill(killExisting bool) (bool, error) {
 	// Check if lock file exists
 	if _, err := os.Stat(l.lockFilePath); err == nil {
 		// Lock file exists, read the PID
@@ -48,9 +56,32 @@ func (l *InstanceLock) TryLock() (bool, error) {
 			return l.createLock()
 		}
 
+		// Don't kill our own process (shouldn't happen, but safety check)
+		if existingPID == l.pid {
+			// We already have the lock
+			return true, nil
+		}
+
 		// Check if the process is still running
 		if l.isProcessRunning(existingPID) {
 			// Another instance is running
+			if killExisting {
+				// Kill the existing instance
+				if err := l.killProcess(existingPID); err != nil {
+					return false, fmt.Errorf("failed to kill existing instance (PID %d): %w", existingPID, err)
+				}
+				// Wait for the process to exit (with retries)
+				// We check up to 10 times with 100ms delay between checks (max 1 second wait)
+				for i := 0; i < 10; i++ {
+					if !l.isProcessRunning(existingPID) {
+						break
+					}
+					time.Sleep(100 * time.Millisecond)
+				}
+				// Remove the lock file (process should be dead now)
+				os.Remove(l.lockFilePath)
+				return l.createLock()
+			}
 			return false, nil
 		}
 
@@ -80,5 +111,10 @@ func (l *InstanceLock) Unlock() error {
 // isProcessRunning checks if a process with the given PID is still running
 func (l *InstanceLock) isProcessRunning(pid int) bool {
 	return checkProcessRunningPlatformSpecific(pid)
+}
+
+// killProcess terminates the process with the given PID
+func (l *InstanceLock) killProcess(pid int) error {
+	return killProcessPlatformSpecific(pid)
 }
 

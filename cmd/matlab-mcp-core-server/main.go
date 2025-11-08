@@ -20,14 +20,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	acquired, err := instanceLock.TryLock()
+	// Try to acquire lock, killing existing instance if found
+	// This ensures a fresh start when Cursor restarts the MCP server
+	acquired, err := instanceLock.TryLockWithKill(true)
 	if err != nil {
-		slog.With("error", err).Error("Failed to check for existing instance.")
+		slog.With("error", err).Error("Failed to acquire instance lock.")
 		os.Exit(1)
 	}
 
 	if !acquired {
-		// Another instance is already running
+		// This shouldn't happen if killExisting is true, but handle it anyway
 		fmt.Fprintf(os.Stderr, "MATLAB MCP Core Server is already running. Only one instance is allowed.\n")
 		os.Exit(0)
 	}
